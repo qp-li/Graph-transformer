@@ -3,7 +3,6 @@
 ### Introduction
 In this paper, we address 3D point cloud place recognition problem for complex dynamic environments, which is particularly relevant for LiDAR-SLAM tasks, such as loop-closure detection and global localization
 
-# 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
 ### Environment and Dependencies
 Code was tested using Python 3.8 with PyTorch (1.10 or above) and MinkowskiEngine 0.5.4 on Ubuntu 18.04 with CUDA 11.
 
