@@ -13,10 +13,10 @@ output: graph_pairs
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset_dir', '-d', type=str, required=False, default="/media/yxm/文档/data/kitti/dataset/", help='Dataset path.')
-    parser.add_argument('--graph_dir', '-g', type=str, required=False, default="", help='Graph path.')
-    parser.add_argument('--output_dir', '-o', type=str, required=False, default="", help='Output path.')
-    parser.add_argument('--pair_list', '-p', type=str, required=False, default="/pair_list", help='Output path.')
+    parser.add_argument('--dataset_dir', '-d', type=str, required=False, default="/media/wuhan2021/ZX1-white/Datasets/SemanticKitti/", help='Dataset path.')
+    parser.add_argument('--graph_dir', '-g', type=str, required=False, default="/media/wuhan2021/ZX1 512G/SG_PR/debug/graphs/", help='Graph path.')
+    parser.add_argument('--output_dir', '-o', type=str, required=False, default="/media/wuhan2021/ZX1 512G/SG_PR/test_temp/graph_pairs_sem_1_1_fast/", help='Output path.')
+    parser.add_argument('--pair_list', '-p', type=str, required=False, default="/home/wuhan2021/SG_PR/SG_PR/data_process/pair_list/", help='Output path.')
     parser.add_argument('--pos_thre', type=int, required=False, default=3, help='Positive threshold.')
     parser.add_argument('--neg_thre', type=int, required=False, default=20, help='Negative threshold.')
 
@@ -29,8 +29,8 @@ if __name__ == "__main__":
 
     for sq in sequences[:]:
         sq_graph_dir = os.path.join(args.graph_dir, sq)
-        graph_pair_list = np.load(args.test_list_dir+'pair_list_3_20_'+str(sq)+'.npy')
-        # print(graph_pair_list.shape)
+        graph_pair_list = np.load(args.pair_list+'pair_list_3_20_'+str(sq)+'.npy')
+        print(graph_pair_list.shape)
         dataset = pykitti.odometry(args.dataset_dir, sq)
         output_dir_sq = os.path.join(args.output_dir, sq)
 

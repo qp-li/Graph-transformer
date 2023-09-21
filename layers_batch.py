@@ -36,6 +36,18 @@ class AttentionModule(torch.nn.Module):
         transformed_global = torch.tanh(global_context) # f  bxf
         sigmoid_scores = torch.sigmoid(torch.matmul(embedding,transformed_global.view(batch_size,-1, 1)))   #weights      nxf fx1  bxnxf bxfx1 bxnx1
         representation = torch.matmul(embedding.permute(0,2,1),sigmoid_scores)    # bxnxf bxfxn bxnx1 bxfx1
+        # batch_size = embedding.shape[0]
+        # ag = torch.mean(embedding, dim=1)
+        # ag = ag.unsqueeze(2)
+        # global_context = torch.mean(torch.matmul(embedding, self.weight_matrix), dim=1)  # 0 # nxf -> f  bxnxf->bxf
+        # transformed_global = torch.tanh(global_context)  # f  bxf
+        # sigmoid_scores = torch.sigmoid(torch.matmul(embedding, transformed_global.view(batch_size, -1,
+        #                                                                                1)))  # weights      nxf fx1  bxnxf bxfx1 bxnx1
+        # # sigmoid_scores = 0 * sigmoid_scores + 0.5
+        # # a1 = sigmoid_scores[1]
+        # # total = torch.sum(a1)
+        # # representation = torch.matmul(embedding.permute(0,2,1),sigmoid_scores)    # bxnxf bxfxn bxnx1 bxfx1
+        # # return ag, sigmoid_scores
         return representation, sigmoid_scores
 
 class TenorNetworkModule(torch.nn.Module):

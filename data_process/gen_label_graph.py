@@ -81,9 +81,9 @@ def open3d_color():
     k = random.random()
     return (i,j,k)
 
-def Visualize():
-    viz_point = open3d.PointCloud()
-    point_cloud = open3d.PointCloud()
+def Visualize(sem_label_set, sem_label, points):
+    viz_point = open3d.geometry.PointCloud()
+    point_cloud = open3d.geometry.PointCloud()
     
     for id_i, label_i in enumerate(sem_label_set):
         print('sem_label:', label_i)
@@ -92,15 +92,38 @@ def Visualize():
         index = index.reshape(index.shape[0])
         sem_cluster = points[index, :]
     
-        point_cloud.points = open3d.Vector3dVector(sem_cluster[:, 0:3])
-        color = color_map[learning_map_inv[label_i]]
+        point_cloud.points = open3d.utility.Vector3dVector(sem_cluster[:, 0:3])
+        color = color_map[learning_map_inv_raw[label_i]]
         color = (color[0] / 255, color[1] / 255, color[2] / 255)
         # print(color)
         point_cloud.paint_uniform_color(color)
         viz_point += point_cloud
     
-        open3d.draw_geometries([point_cloud], window_name='semantic label:' + str(111),
+    open3d.visualization.draw_geometries([viz_point], window_name='semantic label:' + str(label_i),
                            width=1920, height=1080, left=50, top=50)
+
+
+def Visualize_instance(instance_label_set, instance_label, clu_points):
+    viz_point = open3d.geometry.PointCloud()
+    point_cloud = open3d.geometry.PointCloud()
+
+    for id_i, label_i in enumerate(instance_label_set):
+        print('sem_label:', label_i)
+
+        index = np.argwhere(instance_label == label_i)
+        index = index.reshape(index.shape[0])
+        sem_cluster = clu_points[index, :]
+
+        point_cloud.points = open3d.utility.Vector3dVector(sem_cluster[:, 0:3])
+        color = color_map[learning_map_inv[label_i]]
+        color = (color[0] / 255, color[1] / 255, color[2] / 255)
+        # print(color)
+        point_cloud.paint_uniform_color(color)
+        viz_point += point_cloud
+
+    open3d.visualization.draw_geometries([viz_point], window_name='semantic label:' + str(111),
+                                         width=1920, height=1080, left=50, top=50)
+
 
 def _make_point_field(num_field):
     msg_pf1 = pc2.PointField()
@@ -194,6 +217,8 @@ class Semantic_kitti_node(object):
         self.header2.frame_id = "velodyne"
     
     def gen_labels(self, FLAGS, scan_name, label_name, label_output_dir):
+        #scan_name:每一帧点云数据 N×4
+        #label_name:每个点的语义 N×1
         # start = time.time()
         # open scan
         # TODO(yxm): downsampling
@@ -225,27 +250,29 @@ class Semantic_kitti_node(object):
             points = points[remain_id, : ]
             label = label[remain_id]
 
-        if label.shape[0] == points.shape[0]:
+        if label.shape[0] == points.shape[0]:  # 校验N=N
             sem_label = label & 0xFFFF  # semantic label in lower half
-            inst_label = label >> 16  # instance id in upper half
+            inst_label = label >> 16  # instance id in upper half  初始化都是0
             assert ((sem_label + (inst_label << 16) == label).all())
         else:
             print("Points shape: ", points.shape)
             print("Label shape: ", label.shape)
             raise ValueError("Scan and Label don't contain same number of points")
 
-        sem_label = remap_lut[sem_label]
+        sem_label = remap_lut[sem_label]   #将原始label通过learning-map映射到0-19
         sem_label_set = list(set(sem_label))
         sem_label_set.sort()
 
-        # Start clustering
+        # Start clustering 聚类进行实例化
         cluster = []
+        inst_id_set = []
         inst_id = 0
+        # Visualize(sem_label_set, sem_label, points)
         for id_i, label_i in enumerate(sem_label_set):
             # print('sem_label:', label_i)
-            index = np.argwhere(sem_label == label_i)
-            index = index.reshape(index.shape[0])
-            sem_cluster = points[index, :]
+            index = np.argwhere(sem_label == label_i)  #返回满足条件的索引值，即找到同一语义的索引点
+            index = index.reshape(index.shape[0])  #将元组直接转成一维数组
+            sem_cluster = points[index, :]   #找到所有索引的点，所有xyzr
             # print("sem_cluster_shape:",sem_cluster.shape[0])
 
             tmp_inst_label = inst_label[index]
@@ -253,36 +280,38 @@ class Semantic_kitti_node(object):
             tmp_inst_set.sort()
             # print(tmp_inst_set)
 
-            if label_i in [9, 10]:    # road/parking, dont need to cluster
-                inst_cluster = sem_cluster
-                inst_cluster = np.concatenate((inst_cluster, np.full((inst_cluster.shape[0],1), label_i, dtype=np.uint32)), axis=1)
-                # inst_cluster = np.insert(inst_cluster, 4, label_i, axis=1)
-                inst_cluster = np.concatenate((inst_cluster, np.full((inst_cluster.shape[0],1), inst_id, dtype=np.uint32)), axis=1)
-                inst_id = inst_id + 1
-                cluster.extend(inst_cluster)  # Nx6                
+            if label_i in [9, 10, 15]:    # road/parking, dont need to cluster
                 continue
+                # inst_cluster = sem_cluster
+                # inst_cluster = np.concatenate((inst_cluster, np.full((inst_cluster.shape[0],1), label_i, dtype=np.uint32)), axis=1)
+                # # inst_cluster = np.insert(inst_cluster, 4, label_i, axis=1)
+                # inst_cluster = np.concatenate((inst_cluster, np.full((inst_cluster.shape[0],1), inst_id, dtype=np.uint32)), axis=1)
+                # inst_id = inst_id + 1
+                # cluster.extend(inst_cluster)  # Nx6
+                # continue
                 
             elif label_i in [0,2,3,6,7,8]:    # discard
                 continue
             
-            elif len(tmp_inst_set) > 1 or (len(tmp_inst_set) == 1 and tmp_inst_set[0] != 0):     # have instance labels
-                for id_j, label_j in enumerate(tmp_inst_set):
-                    points_index = np.argwhere(tmp_inst_label == label_j)
-                    points_index = points_index.reshape(points_index.shape[0])
-                    # print(id_j, 'inst_size:', len(points_index))
-                    if len(points_index) <= 20:
-                        continue
-                    inst_cluster = sem_cluster[points_index, :]
-                    inst_cluster = np.concatenate((inst_cluster, np.full((inst_cluster.shape[0],1), label_i, dtype=np.uint32)), axis=1)
-                    # inst_cluster = np.insert(inst_cluster, 4, label_i, axis=1)
-                    inst_cluster = np.concatenate((inst_cluster, np.full((inst_cluster.shape[0],1), inst_id, dtype=np.uint32)), axis=1)
-                    inst_id = inst_id + 1
-                    cluster.extend(inst_cluster)
+            # elif len(tmp_inst_set) > 1 or (len(tmp_inst_set) == 1 and tmp_inst_set[0] != 0):     # have instance labels
+            #     continue
+                # for id_j, label_j in enumerate(tmp_inst_set):
+                #     points_index = np.argwhere(tmp_inst_label == label_j)
+                #     points_index = points_index.reshape(points_index.shape[0])
+                #     # print(id_j, 'inst_size:', len(points_index))
+                #     if len(points_index) <= 20:
+                #         continue
+                #     inst_cluster = sem_cluster[points_index, :]
+                #     inst_cluster = np.concatenate((inst_cluster, np.full((inst_cluster.shape[0],1), label_i, dtype=np.uint32)), axis=1)
+                #     # inst_cluster = np.insert(inst_cluster, 4, label_i, axis=1)
+                #     inst_cluster = np.concatenate((inst_cluster, np.full((inst_cluster.shape[0],1), inst_id, dtype=np.uint32)), axis=1)
+                #     inst_id = inst_id + 1
+                #     cluster.extend(inst_cluster)
             else:    # Euclidean cluster
                 # time_start = time.time()
-                if label_i in [1, 4, 5, 14]:     # car truck other-vehicle fence
-                    cluster_tolerance = 0.5
-                elif label_i in [11, 12, 13, 15, 17]:    # sidewalk other-ground building vegetation terrain
+                if label_i in [1, 4, 5, 6, 14]:     # car truck other-vehicle fence
+                    cluster_tolerance = 0.3
+                elif label_i in [11, 12, 13, 15, 17]:    # sidewalk other-ground building terrain
                     cluster_tolerance = 2
                 else:
                     cluster_tolerance = 0.2
@@ -314,22 +343,61 @@ class Semantic_kitti_node(object):
                     inst_cluster = np.concatenate((inst_cluster, np.full((inst_cluster.shape[0],1), label_i, dtype=np.uint32)), axis=1)
                     # inst_cluster = np.insert(inst_cluster, 4, label_i, axis=1)
                     inst_cluster = np.concatenate((inst_cluster, np.full((inst_cluster.shape[0],1), inst_id, dtype=np.uint32)), axis=1)
+                    # id = np.array(inst_id)
+                    inst_id_set.append(inst_id)
                     inst_id = inst_id + 1
                     cluster.extend(inst_cluster) # Nx6
 
+        # Visualize(sem_label_set, sem_label, points)
         # print(time.time()-start)
         # print('*'*80)
         cluster = np.array(cluster)
+        inst_id_set = np.array(inst_id_set)
+        A5 = list(set(cluster[:, 5]))
+########################################  Visualize_instance##############
+        Visualize(sem_label_set, sem_label, points)
+
+        viz_point = open3d.geometry.PointCloud()
+        point_cloud = open3d.geometry.PointCloud()
+
+        for id_j, label_j in enumerate(inst_id_set):
+            print('sem_label:', label_j)
+
+            index = np.argwhere(cluster[:,5] == label_j)
+            index = index.reshape(index.shape[0])
+            sem_cluster = cluster[index, :]
+
+            point_cloud.points = open3d.utility.Vector3dVector(sem_cluster[:, 0:3])
+            color = color_map[learning_map_inv[label_j]]
+            color = (color[0] / 255, color[1] / 255, color[2] / 255)
+            # print(color)
+            point_cloud.paint_uniform_color(color)
+            viz_point += point_cloud
+
+            open3d.visualization.draw_geometries([point_cloud], window_name='semantic label:' + str(label_j),
+                                             width=1920, height=1080, left=50, top=50)
+        shili = np.array(cluster[:,5], dtype=np.uint32)
+        outputPath = '/home/wuhan2021/SG_PR/SG_PR/data_process/test_result/shili.label'
+        shili.tofile(outputPath)
+        outputPath_1 = '/home/wuhan2021/SG_PR/SG_PR/data_process/test_result/pc.bin'
+        viz_point_1 = np.array(viz_point.points, dtype=np.float32)
+        viz_point_1.tofile(outputPath_1)
+        yuyi = np.array(cluster[:, 4], dtype=np.uint32)
+        outputPath_2 = '/home/wuhan2021/SG_PR/SG_PR/data_process/test_result/yuyi.label'
+        yuyi.tofile(outputPath_2)
+##########################################################################
         if 'path' in FLAGS.pub_or_path:
-            np.save(label_output_dir+'/'+label_name.split('/')[-1].split('.')[0]+".npy", cluster)
+            test_dir = label_output_dir+label_name.split('/')[-1].split('.')[0]+".npy"
+            # np.save(label_output_dir+label_name.split('/')[-1].split('.')[0]+".npy", cluster)
         if 'pub' in FLAGS.pub_or_path:
             # print(cluster[11100:11110])
             msg_points = pc2.create_cloud(header=self.header1, fields=_make_point_field(cluster.shape[1]), points=cluster)
             self._labels_pub.publish(msg_points)
+        A4 = list(set(cluster[:, 4]))
+        A5 = list(set(cluster[:, 5]))
+        return cluster  # 选取有效点，11万多，6列，前四列位置  第五列A4：所属的语义类别  第六列A5：实例类别 ，即有多少个实例点
 
-        return cluster      
-
-    def gen_graphs(self, FLAGS, scan_name, scan, graph_output_dir):
+    def gen_graphs(self, FLAGS, scan_name, scan, graph_output_dir, poses_gt):
         inst = scan[:, -1] # get instance label
         inst_label_set = list(set(inst))  # get nums of inst
         inst_label_set.sort()
@@ -339,11 +407,13 @@ class Semantic_kitti_node(object):
         weights = []  # graph edge weights
         cluster = []  # cluster -> node
         centers = []
-        for id_i in range(len(inst_label_set)):
+        poses = []
+        poses = [float(x) for x in poses_gt]  #poses_gt  每行12列
+        for id_i in range(len(inst_label_set)):  #遍历每一帧中的每个实例
             index = np.argwhere(inst_label_set[id_i] == inst) # query cluster by instance label
             index = index.reshape(index.shape[0])
-            inst_cluster = scan[index, :]
-            sem_label = list(set(inst_cluster[:, -2])) # get semantic label
+            inst_cluster = scan[index, :]  #提取出当前实例Label对应的原始点云数据
+            sem_label = list(set(inst_cluster[:, -2])) # get semantic label  -2对应语义label
             assert len(sem_label) == 1 # one instance cluster should have only one semantic label
             if int(sem_label[0]) in node_map.keys():
                 cluster.append(inst_cluster[:, :3])
@@ -379,11 +449,15 @@ class Semantic_kitti_node(object):
                     pass
 
         # generate graph
-        graph = {"nodes": nodes,
-                "edges": edges,
-                "weights": weights,
-                "centers": centers
-                }
+        # graph = {"nodes": nodes,
+        #         "edges": edges,
+        #         "weights": weights,
+        #         "centers": centers
+        #         }
+        graph = {"centers": centers,
+                 "nodes": nodes,
+                 "pose": poses
+                 }
 
         # print(graph)
         if 'path' in FLAGS.pub_or_path:
@@ -401,10 +475,10 @@ class Semantic_kitti_node(object):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("./gen_graph.py")
-    parser.add_argument('--dataset', '-d', type=str, required=False, default="/media/yxm/文档/data/kitti/dataset/", help='Dataset to calculate content. No Default')
+    parser.add_argument('--dataset', '-d', type=str, required=False, default="/media/wuhan2021/ZX1-white/Datasets/SemanticKitti/", help='Dataset to calculate content. No Default')
     parser.add_argument('--config', '-c', type=str, required=False, default="config/semantic-kitti.yaml", help='Dataset config file. Defaults to %(default)s')
-    parser.add_argument('--output_label', type=str, required=False, default="/media/kx/Semantic_KITTI/debug/labels", help='Output path for labels')
-    parser.add_argument('--output_graph', type=str, required=False, default="/media/kx/Semantic_KITTI/debug/graphs", help='Output path for labels')
+    parser.add_argument('--output_label', type=str, required=False, default="/home/wuhan2021/SG_PR/SG_PR/data/", help='Output path for labels')
+    parser.add_argument('--output_graph', type=str, required=False, default="/home/wuhan2021/SG_PR/SG_PR/data/", help='Output path for labels')
     parser.add_argument('--pub_or_path', type=str, required=False, default="path", help='pub_or_path')
     parser.add_argument('--pub_rate', type=int, default=10, help='the frequency(hz) of pc published, default `10`')
     parser.add_argument('--label_topic', type=str, default='/labeled_pc', help='the 3D point cloud message topic to be published, default `/labeled_pc`')
@@ -430,9 +504,10 @@ if __name__ == '__main__':
         quit()
 
     # get training sequences to calculate statistics
-    sequences = CFG["split"]["train"][:]
+    sequences = CFG["split"]["valid"][:]
     color_map = CFG['color_map']
     learning_map_inv = CFG['learning_map_inv']
+    learning_map_inv_raw = CFG['learning_map_inv_raw']
     print("Analizing sequences", sequences)
 
     # itearate over sequences
@@ -453,6 +528,7 @@ if __name__ == '__main__':
         
         # does sequence folder exist?
         scan_paths = os.path.join(FLAGS.dataset, "sequences", seqstr, "velodyne")
+        scan_paths = '/media/wuhan2021/ZX1-white/Datasets/SemanticKitti/sequences/08/velodyne/'
         if os.path.isdir(scan_paths):
             print("Sequence folder exists!")
         else:
@@ -464,6 +540,7 @@ if __name__ == '__main__':
 
         # does sequence folder exist?
         label_paths = os.path.join(FLAGS.dataset, "sequences", seqstr, "labels")
+        label_paths = '/media/wuhan2021/ZX1-white/Datasets/SemanticKitti/data_odometry_labels/dataset/sequences/08/labels/'
         if os.path.isdir(label_paths):
             print("Labels folder exists!")
         else:
@@ -477,6 +554,12 @@ if __name__ == '__main__':
         # print(len(label_names))
         # print(len(scan_names))
         assert(len(label_names) == len(scan_names))
+        poses_path = os.path.join(FLAGS.dataset, "sequences", seqstr, "poses.txt")
+        with open(str(poses_path), 'r') as f:
+            poses = []
+            for lines in f.readlines():
+                lines = lines.replace("\n","").split(" ")
+                poses.append(lines)
 
         # create a scan
         node = Semantic_kitti_node(FLAGS.pub_rate, FLAGS.label_topic, FLAGS.graph_topic)
@@ -485,7 +568,7 @@ if __name__ == '__main__':
             if rospy.is_shutdown():
                 break
             cluster = node.gen_labels(FLAGS, scan_names[frame], label_names[frame], label_output_dir)
-            node.gen_graphs(FLAGS, scan_names[frame], cluster, graph_output_dir)
+            node.gen_graphs(FLAGS, scan_names[frame], cluster, graph_output_dir, poses[frame])
             
             rate.sleep()
             # rospy.logwarn("%d frames published.", frame)

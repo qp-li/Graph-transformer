@@ -68,6 +68,7 @@ def main():
         #### P-R
         precision, recall, pr_thresholds = metrics.precision_recall_curve(gt_db, pred_db)
         # plot p-r curve
+        average_recall_1 = metrics.recall_score
         plt.figure(1)
         lw = 2
         plt.plot(recall, precision, color='darkorange',

@@ -1,5 +1,5 @@
 import sys
-sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
+sys.path.remove('/opt/ros/melodic/lib/python2.7/dist-packages')
 import numpy as np
 import argparse
 import os
@@ -15,9 +15,9 @@ output: graph_pairs
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset_dir', '-d', type=str, required=False, default="/media/yxm/文档/data/kitti/dataset/", help='Dataset path.')
-    parser.add_argument('--graph_dir', '-g', type=str, required=False, default="/media/kx/Semantic_KITTI/sem_kitti_graph/", help='Graph path.')
-    parser.add_argument('--output_dir', '-o', type=str, required=False, default="/media/kx/Semantic_KITTI/graph_pairs_sem_3_20", help='Output path.')
+    parser.add_argument('--dataset_dir', '-d', type=str, required=False, default="/media/qipeng-li/ZX1-1TB/SG-PR/dataset/", help='Dataset path.')
+    parser.add_argument('--graph_dir', '-g', type=str, required=False, default="/media/qipeng-li/ZX1-1TB/SG-PR/0.debug/graphs/", help='Graph path.')
+    parser.add_argument('--output_dir', '-o', type=str, required=False, default="/media/qipeng-li/ZX1-1TB/SG-PR/graph_pairs_sem_12_31", help='Output path.')
     parser.add_argument('--pos_thre', type=int, required=False, default=3, help='Positive threshold.')
     parser.add_argument('--neg_thre', type=int, required=False, default=20, help='Negative threshold.')
     args, unparsed = parser.parse_known_args()
@@ -25,7 +25,8 @@ if __name__ == "__main__":
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
 
-    sequences = ["00","01","02","03","04","05","06","07","08","09","10"]
+    #sequences = ["00","01","02","03","04","05","06","07","08","09","10"]
+    sequences = ["08"]
 
     for sq in sequences[:]:
         print("*" * 80)
@@ -65,7 +66,7 @@ if __name__ == "__main__":
                 choose_prob = False
 
                 # sampling strategy
-                if dist >= args.pos_thre and dist <= srgs.neg_thre:
+                if dist >= args.pos_thre and dist <= args.neg_thre:
                     continue
 
                 if dist <= args.pos_thre: # dist < 3m, choose prob = 1

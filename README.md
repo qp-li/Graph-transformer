@@ -1,42 +1,34 @@
-# SG_PR
+# An Efficient Point Cloud Place Recognition Approach Based on Transformer in Dynamic Environment 
 
-Code for IROS2020 paper [Semantic Graph Based Place Recognition for 3D Point Clouds](https://ras.papercept.net/proceedings/IROS20/0170.pdf)
+### Introduction
+In this paper, we address 3D point cloud place recognition problem for complex dynamic environments, which is particularly relevant for LiDAR-SLAM tasks, such as loop-closure detection and global localization
 
-![](./doc/pipeline.png)
+# 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
+### Environment and Dependencies
+Code was tested using Python 3.8 with PyTorch (1.10 or above) and MinkowskiEngine 0.5.4 on Ubuntu 18.04 with CUDA 11.
 
-Pipeline overview.
+The following Python packages are required:
+* tqdm
+* tensorboardX
+* pyyaml
+* PyTorch
+* MinkowskiEngine (version 0.5.4)
+* pytorch_metric_learning (version 1.1 or above)
+* pandas
+* wandb
+* texttable
 
-## Citation
 
-If you think this work is useful for your research, please consider citing:
+### Data preprocess
 
-```
-@inproceedings{kong2020semantic,
-  title={Semantic Graph based Place Recognition for Point Clouds},
-  author={Kong, Xin and Yang, Xuemeng and Zhai, Guangyao and Zhao, Xiangrui and Zeng, Xianfang and Wang, Mengmeng and Liu, Yong and Li, Wanlong and Wen, Feng},
-  booktitle={2020 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)},
-  pages={8216--8223},
-  year={2020},
-  organization={IEEE}
-}
-```
+For scene graph data structure, you can can refer to the 'data_process' dir of generating graphs. You need to prepare three types of raw data: point clouds, semantics label, and ground-truth. We also provide the cleared point cloud bin-files with MOS 
+[here](https://drive.google.com/file/d/1bm0mBZDZ2r7-l4ENFtEH9-H1jJDADjWp/view?usp=drive_link) 
 
-## Requirements
-We recommend python3.6. You can install required dependencies by:
-```bash
-pip install -r requirements.txt
-```
-
-## Training
-
-### Data structure
-
-The data structure is:
 
 ```bash
 data
     |---00
-    |    |---000000.json   
+    |    |---000000.json
     |    |---000001.json
     |    |---...
     |
@@ -51,85 +43,52 @@ data
     |---01.txt
     |---...
 ```
-You can download the provided [preprocessed data](https://drive.google.com/file/d/1eu4G008gvAJGjU-M8qBvTN0JLHG2B-OB/view?usp=sharing).
-Or you can refer to the 'data_process' dir for details of generating graphs.
 
-### Configuration file
 
-Before training the model, you need to modify the configuration file in ./config according to your needs. The main parameters are as follows:
-- graph_pairs_dir: the root dir of your dataset.
-- batch_size: batch size, 128 in our paper.
-- p_thresh: distance threshold for positive samples, e.g., 3m 5m 10m. If the distance between two samples is less than p_thresh meters, they will be treated as positive samples. The distance threshold for negative samples is set to 20 meters by default. Note that your training sample pairs should not contain samples with a distance greater than p_thresh meters and less than 20 meters.
+Before the network training or evaluation, run the below code to generate pickles with positive and negative point clouds for each anchor point cloud. This is the same data preprocess as pointNetVLAD
+. You can also download training and evaluation datasets from 
+[here](https://drive.google.com/open?id=1rflmyfZ1v9cGGH0RL4qXRrKhg-8A-U9q) 
 
-### Training model
+```generate pickles
+cd generating_queries/ 
 
-- model: pre-trained model.
-- train_sequences: list of training data.
-- eval_sequences: list of validation data.
-- logdir: path to save training results.
-- graph_pairs_dir: set to SK label dir, e.g., '../SG_PR_DATA/graphs_sk'
-- pair_list_dir: set to train dir, e.g., '../SG_PR_DATA/train/3_20', 3_20 refers to positive threshold 3m negative threshold 20m
+# Generate training tuples for the Refined Dataset
+python generate_training_tuples_refine.py --dataset_root <dataset_root_path>
 
-After preparing the data and modifying the configuration file, you can start training. Just run:
+# Generate evaluation tuples
+python generate_test_sets.py --dataset_root <dataset_root_path>
+```
+`<dataset_root_path>` is a path to dataset root folder, e.g. `/data/pointnetvlad/benchmark_datasets/`.
+Before running the code, ensure you have read/write rights to `<dataset_root_path>`, as training and evaluation pickles
+are saved there. 
+### Training
 
-```bash
 python main_sg.py
-```
 
-## Testing
+### Evaluation
 
-### eval_pair
-
-This example takes a pair of graphs as input and output their similarity score. To run this example, you need to set the following parameters:
-- model: the eval model file.
-- pair_file: a pair of graph.
-
-Then just run:
-```bash
-python eval_pair.py
-```
-
-### eval_batch
-
-This example tests a sequence, the results are it's PR curve and F1 max score. To run this example, you need to set the following parameters:
-- model: the eval model file.
-- graph_pairs_dir: set to SK label dir ('../SG_PR_DATA/graphs_sk') or RN prediction dir ('../SG_PR_DATA/graphs_rn') or other semantic prediction in the future.
-- pair_list_dir: set to eval dir which excludes easy positive pairs, e.g., '../SG_PR_DATA/eval/3_20' 
+#### For KITTI dataset
+You can download pretrained model and evaluation datasets from 
+[here](https://drive.google.com/file/d/1XBIbK1K39dloz8yJrVaDzZAfuVU1byUE/view?usp=drive_link). Please note, You need to select different sequences accordingly. The results are it's PR curve and F1 max score. Besides, you need to set the following parameters:
+- model: the eval pretrained model file.
+- graph_pairs_dir: set to SK label dir ('../PR_DATA/graphs_sk')
+- pair_list_dir: set to eval dir which excludes positive pairs, e.g., '../PR_DATA/eval/3_20' 
 - sequences: list of test sequences.
 - output_path: path to save test results.
-- show: whether to display the pr curve in real time.
 
-Then just run:
 ```bash
 python eval_batch.py
 ```
 
+#### For Oxford and In-house dataset
+You can download training and evaluation datasets from 
+[here](https://drive.google.com/file/d/1DzUvNig36jN_jLvt8dG8CDo8ao7CfZvJ/view?usp=drive_link). You need to modify the file path according to your situation. To evaluate pretrained models run the following commands:
 
-## Other methods
-#### PointNetVLAD
-Please refer to our modified repo for training and testing PointNetVLAD on KITTI dataset, which is mentioned in our paper
-as [PV_KITTI](https://github.com/kxhit/pointnetvlad).
+```
+cd eval
+# To evaluate the model trained on the Refined Dataset
+python evaluate.py 
+```
 
-<!--
-Todo
-#### Scan Context
-##### Ford
-1. Generate feature database by 'gen_SC_db_ford.py'
-2. Compute distance and plot PR curve by 'eval_SC_list_Ford.py'
-
-
-#### M2DP
-##### Ford
-1. Generate feature database by 'evaluate_Ford.m'
-2. Compute distance and plot PR curve by 'eval_SC_list_Ford.py'
--->
-
-## TODO
-- [ ] Support Ford Campus Dataset
-- [x] Release compared methods e.g., [PointNetVLAD](https://github.com/mikacuy/pointnetvlad) trained on KITTI (PV-KITTI)
-- [x] Release preprocessing code
-
-
-## Acknowledgement
-
-Thanks to the source code of some great works such as [SIMGNN](https://github.com/benedekrozemberczki/SimGNN), [DGCNN](https://github.com/WangYueFt/dgcnn).
+### License
+Our code is released under the MIT License (see LICENSE file for details).

@@ -1,8 +1,3 @@
-# SGPR
-
-## Description
-This is the source code of "Semantic Graph Based Place Recognition for 3D Point Clouds"
-
 ## Environment
 - Ubuntu 16.04(Recommended)
 - CUDA 10.0/10.1
@@ -41,7 +36,4 @@ Or we provide pair lists prepared in advance to generate semantic graph pairs fa
 ```bash
 $ python gen_sem_kitti_graph_pairs_fast.py -d $DATASET_DIR -g $GRAPH_DIR -o $OUTPUT_DIR
 ```
-##  TODO
-1. Ring-based clustering.
-2. Some visualization code.
-3. Test the code.
+

@@ -7,6 +7,7 @@ from tqdm import tqdm, trange
 from layers_batch import AttentionModule, TenorNetworkModule
 from utils import *
 from tensorboardX import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 # from warmup_scheduler import GradualWarmupScheduler
 import os
 import dgcnn as dgcnn
@@ -30,7 +31,7 @@ class SG(torch.nn.Module):
         self.args = args
         self.number_labels = number_of_labels
         self.setup_layers()
-
+        self.use_transformer = 1
     def calculate_bottleneck_features(self):
         """
         Deciding the shape of the bottleneck layer.
@@ -47,6 +48,8 @@ class SG(torch.nn.Module):
         self.fully_connected_first = torch.nn.Linear(self.feature_count, self.args.bottle_neck_neurons)
         self.scoring_layer = torch.nn.Linear(self.args.bottle_neck_neurons, 1)
         bias_bool = False # TODO
+        encoder_layer = nn.TransformerEncoderLayer(d_model=32, nhead=4, dim_feedforward=1024, activation='relu')
+        self.transformer_encoder = torch.nn.TransformerEncoder(encoder_layer, num_layers=1)
         self.dgcnn_s_conv1 = nn.Sequential(
             nn.Conv2d(3*2, self.args.filters_1, kernel_size=1, bias=bias_bool),
             nn.BatchNorm2d(self.args.filters_1),
@@ -119,10 +122,17 @@ class SG(torch.nn.Module):
         features_1 = data["features_1"].cuda(self.args.gpu)
         features_2 = data["features_2"].cuda(self.args.gpu)
 
-        # features B x (3+label_num) x node_num
+        # features B x (3+label_num) x node_num     256*100*32
         abstract_features_1 = self.dgcnn_conv_pass(features_1) # node_num x feature_size(filters-3)
         abstract_features_2 = self.dgcnn_conv_pass(features_2)  #BXNXF
+        #已经由DGCNN 得到了每个graph的节点特征 256*100*32
         # print("abstract feature: ", abstract_features_1.shape)
+        #添加 Transformer
+        if self.use_transformer == 1:
+            abstract_features_1 = self.transformer_encoder(abstract_features_1)
+            abstract_features_2 = self.transformer_encoder(abstract_features_2)
+        # print("abstract feature: ", abstract_features_1.shape)
+        # 256*32*1             256*100*1
         pooled_features_1, attention_scores_1 = self.attention(abstract_features_1) # bxfx1
         pooled_features_2, attention_scores_2 = self.attention(abstract_features_2)
         # print("pooled_features_1: ", pooled_features_1.shape)
@@ -148,9 +158,9 @@ class SGTrainer(object):
         :param args: Arguments object.
         """
         self.args = args
-        self.model_pth = self.args.model
+        self.model_pth = self.args.model   #pytorch model
 
-        self.initial_label_enumeration(train)
+        self.initial_label_enumeration(train)   #收集唯一的节点标识符
         self.setup_model(train)
         self.writer = SummaryWriter(logdir=self.args.logdir)
 
@@ -172,12 +182,12 @@ class SGTrainer(object):
                 new_state_dict[name] = v
             # load params
             self.model.load_state_dict(new_state_dict)
-        self.model = torch.nn.DataParallel(self.model, device_ids=[self.args.gpu])
+        self.model = torch.nn.DataParallel(self.model, device_ids=[self.args.gpu])  #会使用nn.DataParallel函数来用多个GPU来加速训练
         self.model.cuda(self.args.gpu)
 
     def initial_label_enumeration(self,train=True):
         """
-        Collecting the unique node idsentifiers.
+        Collecting the unique node idsentifiers.  #收集唯一的节点标识符
         """
         print("\nEnumerating unique labels.\n")
         if train:
@@ -257,9 +267,9 @@ class SGTrainer(object):
 
         elif node_num_1 < self.args.node_num:
             data["nodes_1"] = np.concatenate(
-                (np.array(data["nodes_1"]), -np.ones(self.args.node_num - node_num_1))).tolist()  # padding 0
+                (np.array(data["nodes_1"]), -np.ones(self.args.node_num - node_num_1))).tolist()  # padding 0  node：把差值补-1补满
             data["centers_1"] = np.concatenate(
-                (np.array(data["centers_1"]), np.zeros((self.args.node_num - node_num_1,3))))  # padding 0
+                (np.array(data["centers_1"]), np.zeros((self.args.node_num - node_num_1,3))))  # padding 0   centers_1：把差值补0补满
 
         if node_num_2 > self.args.node_num:
             sampled_index_2 = np.random.choice(node_num_2, self.args.node_num, replace=False)
@@ -306,7 +316,7 @@ class SGTrainer(object):
         else:
             new_data["target"] = -100.0
             print("distance error: ", data["distance"])
-            exit(-1)
+            #exit(-1)
         return new_data
 
     def process_batch(self, batch, training=True):
@@ -472,7 +482,9 @@ class SGTrainer(object):
         data["features_1"] = torch.FloatTensor(np.array(batch_feature_1))
         data["features_2"] = torch.FloatTensor(np.array(batch_feature_2))
         data["target"] = torch.FloatTensor(np.array(batch_target))
-        prediction, _, _ = self.model(data)
+        prediction, result_2, result_3 = self.model(data)
+        print("prediction shape: ", prediction.shape)
+        print("result_2: ", result_2.shape)
         prediction = prediction.cpu().detach().numpy().reshape(-1)
         gt = np.array(batch_target).reshape(-1)
         return prediction, gt
@@ -500,7 +512,7 @@ class SGTrainer(object):
         gt = np.array(batch_target).reshape(-1)
         return prediction, gt
 
-    def eval_batch_pair(self, batch):
+    def eval_batch_pair1(self, batch):
         self.model.eval()
 
         batch_target = []
